@@ -1,72 +1,60 @@
-const express = require('express');
-const bodyParser = require('body-parser');
-const cors = require('cors');
+const express = require("express");
+const path = require("path");
 
 const app = express();
-const PORT = 3000;
+app.use(express.json());
 
-app.use(cors());
-app.use(bodyParser.json());
+// Serve static files (HTML, CSS, JS)
+app.use(express.static(path.join(__dirname, "public")));
 
-let eventLogs = [];
-let latestSummary = null;
+let logs = [];   // temporary log storage
+let clients = []; // list of SSE clients
 
-// CSP Header
-app.use((req, res, next) => {
-  res.setHeader(
-    'Content-Security-Policy',
-    "default-src 'none'; img-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self';"
-  );
-  next();
-});
-
-// Route to receive event logs
-app.post('/log', (req, res) => {
-  const { action } = req.body;
-
-  if (!action) {
-    return res.status(400).json({ error: 'Missing action field' });
+// Endpoint to receive logs
+app.post("/log", (req, res) => {
+  const { eventType, description, timestamp } = req.body;
+  if (!eventType || !description) {
+    return res.status(400).json({ error: "Invalid log format" });
   }
-
-  const timestamp = new Date().toISOString();
-  eventLogs.push({ action, timestamp });
-
-  console.log(`[LOGGED] ${timestamp} - ${action}`);
-  res.status(200).json({ message: 'Event logged' });
+  logs.push({ eventType, description, timestamp });
+  console.log("📩 Log received:", { eventType, description, timestamp });
+  res.json({ status: "logged" });
 });
 
-// Route for client to fetch summary
-app.get('/summary', (req, res) => {
-  res.json({ summary: latestSummary });
+// SSE endpoint for pushing summaries
+app.get("/events", (req, res) => {
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
+
+  clients.push(res);
+
+  req.on("close", () => {
+    clients = clients.filter(c => c !== res);
+  });
 });
 
-// Batch processing every 2 minutes
+// Batch process logs every 2 minutes
 setInterval(() => {
-  if (eventLogs.length === 0) {
-    latestSummary = null;
-    return;
-  }
+  if (logs.length === 0) return;
 
-  const summary = {};
-  for (const log of eventLogs) {
-    summary[log.action] = (summary[log.action] || 0) + 1;
-  }
+  const summary = logs.reduce((acc, log) => {
+    acc.total++;
+    acc[log.eventType] = (acc[log.eventType] || 0) + 1;
+    return acc;
+  }, { total: 0 });
 
-  const generatedSummary = {
-    generatedAt: new Date().toISOString(),
-    totalEvents: eventLogs.length,
-    details: summary,
-  };
+  console.log("📊 Summary sent to clients:", summary);
 
-  latestSummary = generatedSummary;
+  clients.forEach(client => {
+    client.write(`data: ${JSON.stringify(summary)}\n\n`);
+  });
 
-  console.log('📦 Summary sent to client:', generatedSummary);
+  logs = []; // clear logs for next batch
+}, 120000); // 2 minutes
 
-  // Clear the logs after processing
-  eventLogs = [];
-}, 2 * 60 * 1000); // every 2 minutes
-
-// Start the server
+// Start server
+const PORT = 3000;
 app.listen(PORT, () => {
   console.log(`🚀 Server running at http://localhost:${PORT}`);
 });
