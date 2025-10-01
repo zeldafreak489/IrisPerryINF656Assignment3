@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>User Activity Logger</title>
+</head>
+<body>
+  <h1>User Interaction Logger</h1>
+
+  <button id="logButton">Click Me</button>
+
+  <form id="logForm">
+    <input type="text" name="inputData" placeholder="Enter something..." required />
+    <button type="submit">Submit Form</button>
+  </form>
+
+  <script>
+    const sendLog = async (action) => {
+      try {
+        const response = await fetch('/log', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ action }),
+        });
+
+        if (response.ok) {
+          console.log(`✅ Action "${action}" logged successfully`);
+        } else {
+          console.error('❌ Failed to log action');
+        }
+      } catch (err) {
+        console.error('❌ Network error while logging action', err);
+      }
+    };
+
+    document.getElementById('logButton').addEventListener('click', () => {
+      sendLog('Button clicked');
+    });
+
+    document.getElementById('logForm').addEventListener('submit', (e) => {
+      e.preventDefault();
+      sendLog('Form submitted');
+    });
+
+    // Poll server for summaries every 10 seconds
+    setInterval(async () => {
+      try {
+        const res = await fetch('/summary');
+        const data = await res.json();
+
+        if (data.summary) {
+          console.log('📦 Summary received:', data.summary);
+        }
+      } catch (e) {
+        console.error('❌ Error fetching summary', e);
+      }
+    }, 10000);
+  </script>
+</body>
+</html>
